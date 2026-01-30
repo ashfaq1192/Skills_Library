@@ -1,0 +1,31 @@
+# Kafka Helm Values for LearnFlow Platform
+# Override default bitnami/kafka chart values
+
+replicaCount: 3
+
+persistence:
+  enabled: true
+  size: 8Gi
+
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "500m"
+
+zookeeper:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 4Gi
+
+# Auto-create topics (can also use create_topics.py script)
+extraConfig: |
+  auto.create.topics.enable=false
+  log.retention.hours=168
+  log.segment.bytes=1073741824
+  num.partitions=3
+  default.replication.factor=2
