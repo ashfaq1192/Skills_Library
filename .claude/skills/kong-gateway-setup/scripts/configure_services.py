@@ -1,132 +1,141 @@
 #!/usr/bin/env python3
-"""Configure Kong services and routes for microservices."""
-import subprocess, sys, argparse, json
+"""Generate Kong Kubernetes Ingress resources for LearnFlow services.
+
+Matches actual LearnFlow production patterns:
+- 3 separate Ingress resources: frontend, API (9 routes), docs
+- Kong ingress class with konghq.com annotations
+- strip-path: false (services handle their own paths)
+- ImplementationSpecific pathType for API routes
+"""
+import sys, argparse
 from pathlib import Path
 
-# Example services configuration
-SERVICES_CONFIG = {
-    "services": [
-        {
-            "name": "triage-service",
-            "host": "triage-service.learnflow.svc.cluster.local",
-            "port": 80,
-            "path": "/triage"
-        },
-        {
-            "name": "concepts-service",
-            "host": "concepts-service.learnflow.svc.cluster.local",
-            "port": 80,
-            "path": "/concepts"
-        },
-        {
-            "name": "exercise-service",
-            "host": "exercise-service.learnflow.svc.cluster.local",
-            "port": 80,
-            "path": "/exercises"
-        },
-        {
-            "name": "code-execution-service",
-            "host": "code-execution-service.learnflow.svc.cluster.local",
-            "port": 80,
-            "path": "/execute"
-        }
-    ]
-}
+# All LearnFlow API routes - matches actual ingress.yaml
+LEARNFLOW_ROUTES = [
+    {"path": "/api/triage", "service": "triage-service", "port": 80},
+    {"path": "/api/concepts", "service": "concepts-service", "port": 80},
+    {"path": "/api/exercises", "service": "exercise-service", "port": 80},
+    {"path": "/api/execute", "service": "code-execution-service", "port": 80},
+    {"path": "/api/debug", "service": "debug-service", "port": 80},
+    {"path": "/api/review", "service": "code-review-service", "port": 80},
+    {"path": "/api/progress", "service": "progress-service", "port": 80},
+    {"path": "/api/curriculum", "service": "progress-service", "port": 80},
+    {"path": "/api/quizzes", "service": "exercise-service", "port": 80},
+]
 
-def configure_services(kong_namespace, app_namespace, config_file=None):
-    """Configure Kong services via Admin API."""
+INGRESS_TEMPLATE = '''apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: learnflow-frontend-ingress
+  namespace: {namespace}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "http"
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: learnflow-frontend
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: learnflow-api-ingress
+  namespace: {namespace}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "http"
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+{api_routes}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: learnflow-docs-ingress
+  namespace: {namespace}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "http"
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: learnflow-docs
+                port:
+                  number: 80
+'''
 
-    # Port-forward Kong Admin API
-    print("→ Configuring Kong services...")
 
-    # Get Kong Admin API endpoint
-    admin_url = "http://localhost:8001"
+def configure_services(namespace, output_dir=None):
+    """Generate Kong Kubernetes Ingress YAML for LearnFlow services."""
 
-    # Load services config
-    if config_file and Path(config_file).exists():
-        import yaml
-        with open(config_file) as f:
-            config = yaml.safe_load(f)
+    print(f"Generating Kong Ingress resources for namespace: {namespace}...")
+
+    # Build API route entries
+    route_lines = []
+    for route in LEARNFLOW_ROUTES:
+        route_lines.append(f"          - path: {route['path']}")
+        route_lines.append(f"            pathType: ImplementationSpecific")
+        route_lines.append(f"            backend:")
+        route_lines.append(f"              service:")
+        route_lines.append(f"                name: {route['service']}")
+        route_lines.append(f"                port:")
+        route_lines.append(f"                  number: {route['port']}")
+
+    api_routes = "\n".join(route_lines)
+
+    ingress_yaml = INGRESS_TEMPLATE.format(
+        namespace=namespace,
+        api_routes=api_routes,
+    )
+
+    # Write to output directory
+    if output_dir:
+        output_path = Path(output_dir)
     else:
-        config = SERVICES_CONFIG
+        output_path = Path(f"./k8s/kong")
 
-    # Configure each service
-    import requests
+    output_path.mkdir(parents=True, exist_ok=True)
+    ingress_file = output_path / "ingress.yaml"
+    ingress_file.write_text(ingress_yaml)
 
-    configured = 0
-    for svc in config["services"]:
-        service_name = svc["name"]
-        upstream_url = f"http://{svc['host']}:{svc['port']}"
-        route_path = svc["path"]
+    print(f"  Created: {ingress_file}")
+    print(f"\n  3 Ingress resources:")
+    print(f"    1. learnflow-frontend-ingress -> learnflow-frontend:80 (path: /)")
+    print(f"    2. learnflow-api-ingress -> 9 API routes:")
+    for route in LEARNFLOW_ROUTES:
+        print(f"       {route['path']} -> {route['service']}:{route['port']}")
+    print(f"    3. learnflow-docs-ingress -> learnflow-docs:80 (path: /docs)")
 
-        # Create/Update service
-        service_data = {
-            "name": service_name,
-            "url": upstream_url
-        }
-
-        try:
-            # Try to create service
-            response = requests.post(f"{admin_url}/services", json=service_data)
-
-            if response.status_code == 409:
-                # Service exists, update it
-                response = requests.patch(
-                    f"{admin_url}/services/{service_name}",
-                    json=service_data
-                )
-
-            if response.status_code not in [200, 201]:
-                print(f"  ⚠ Failed to configure {service_name}: {response.text}")
-                continue
-
-            # Create route for service
-            route_data = {
-                "name": f"{service_name}-route",
-                "paths": [route_path],
-                "strip_path": True
-            }
-
-            response = requests.post(
-                f"{admin_url}/services/{service_name}/routes",
-                json=route_data
-            )
-
-            if response.status_code in [200, 201]:
-                print(f"  ✓ Configured: {service_name} → {route_path}")
-                configured += 1
-            elif response.status_code == 409:
-                print(f"  ✓ Already configured: {service_name}")
-                configured += 1
-            else:
-                print(f"  ⚠ Failed to create route for {service_name}")
-
-        except Exception as e:
-            print(f"  ❌ Error configuring {service_name}: {e}")
-
-    if configured == 0:
-        print(f"\n❌ No services configured")
-        print(f"→ Make sure Kong Admin API is accessible:")
-        print(f"  kubectl port-forward -n {kong_namespace} svc/kong-kong-admin 8001:8001")
-        return 1
-
-    print(f"\n✓ Configured {configured} services")
-    print(f"\n→ Test routes:")
-    print(f"  Port-forward proxy: kubectl port-forward -n {kong_namespace} svc/kong-kong-proxy 8000:80")
-    print(f"  curl http://localhost:8000/triage/health")
+    print(f"\n✓ Kong Ingress configuration generated")
+    print(f"  Annotations: strip-path=false, protocols=http")
+    print(f"  IngressClass: kong")
+    print(f"\n  Apply: kubectl apply -f {ingress_file}")
+    print(f"  Access: kubectl port-forward -n kong svc/kong-kong-proxy 8080:80")
+    print(f"  Test: curl http://localhost:8080/api/triage/health")
 
     return 0
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--kong-namespace", default="kong", help="Kong namespace")
-    parser.add_argument("--app-namespace", default="learnflow", help="Application namespace")
-    parser.add_argument("--config", help="Services configuration YAML file")
+    parser = argparse.ArgumentParser(description="Generate Kong Ingress for LearnFlow")
+    parser.add_argument("--namespace", default="learnflow", help="Application namespace")
+    parser.add_argument("--output", help="Output directory for ingress YAML")
     args = parser.parse_args()
-
-    # Note: This script requires Kong Admin API to be port-forwarded
-    print("⚠ Ensure Kong Admin API is accessible:")
-    print("  kubectl port-forward -n kong svc/kong-kong-admin 8001:8001")
-    print()
-
-    sys.exit(configure_services(args.kong_namespace, args.app_namespace, args.config))
+    sys.exit(configure_services(args.namespace, args.output))
