@@ -1,15 +1,15 @@
 ---
 name: better-auth-setup
-description: Configure Better Auth authentication for Next.js
-version: 1.0.0
+description: Configure Better Auth with role-based authentication for Next.js + Neon PostgreSQL
+version: 2.0.0
 ---
 
 # Better Auth Setup
 
 ## When to Use
-- Add authentication to Next.js app
-- Set up email/password and OAuth login
-- Protect routes with middleware
+- Add role-based authentication (student/teacher) to Next.js app
+- Set up email/password login with Neon PostgreSQL
+- Protect routes with session-based middleware
 
 ## Prerequisites
 - Next.js 14+ application
@@ -17,14 +17,15 @@ version: 1.0.0
 
 ## Instructions
 1. Install: `python scripts/install_better_auth.py --project-dir <path>`
-2. Configure: `python scripts/configure_auth.py --project-dir <path> --database-url <url> --providers google,github`
+2. Configure: `python scripts/configure_auth.py --project-dir <path> --database-url <neon-url>`
 3. Pages: `python scripts/generate_auth_pages.py --project-dir <path>`
 4. Middleware: `python scripts/add_middleware.py --project-dir <path>`
 
 ## Validation
-- [ ] Better Auth packages installed
-- [ ] Auth API routes created
-- [ ] Login/signup pages generated
-- [ ] Protected routes redirect unauthenticated users
+- [ ] Better Auth packages installed (better-auth, pg)
+- [ ] Auth config with role field and Neon SSL handling
+- [ ] Login/signup pages with role selection (student/teacher)
+- [ ] Role-based redirect after login
+- [ ] `.env.local` has DATABASE_URL, AUTH_SECRET
 
-See [REFERENCE.md](./REFERENCE.md) for OAuth setup and troubleshooting.
+See [REFERENCE.md](./REFERENCE.md) for role-based patterns and Neon SSL troubleshooting.

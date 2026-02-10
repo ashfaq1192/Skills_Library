@@ -1,224 +1,301 @@
 #!/usr/bin/env python3
-"""Generate authentication pages for Better Auth."""
+"""Generate authentication pages with role selection and role-based redirects.
+
+Matches actual LearnFlow production patterns:
+- Login with resilient JSON error handling
+- Signup with student/teacher role selection
+- Role-based redirect (teacher -> /teacher, student -> /dashboard)
+- Session check via /api/auth/get-session for role detection
+- Dark theme (slate-900/800/700) matching LearnFlow design
+"""
 import sys, argparse
 from pathlib import Path
 
-LOGIN_PAGE = '''\"use client\"
+LOGIN_PAGE = '''"use client"
 
-import { useState } from \"react\"
-import { useRouter } from \"next/navigation\"
-import { authClient } from \"@/lib/auth-client\"
+import { useState } from "react"
+import Link from "next/link"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState(\"\")
-  const [password, setPassword] = useState(\"\")
-  const [error, setError] = useState(\"\")
-  const router = useRouter()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(\"\")
+    setLoading(true)
+    setError("")
 
     try {
-      await authClient.signIn.email({ email, password })
-      router.push(\"/dashboard\")
-    } catch (err) {
-      setError(\"Invalid credentials\")
+      const res = await fetch("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        let message = "Login failed"
+        try {
+          const data = JSON.parse(text)
+          message = data.message || message
+        } catch {
+          if (text) message = text
+        }
+        throw new Error(message)
+      }
+
+      // Fetch session to get role for redirect
+      const sessionRes = await fetch("/api/auth/get-session", {
+        credentials: "include",
+      })
+      if (sessionRes.ok) {
+        const session = await sessionRes.json()
+        const role = session?.user?.role || "student"
+        window.location.href = role === "teacher" ? "/teacher" : "/dashboard"
+      } else {
+        window.location.href = "/dashboard"
+      }
+    } catch (err: any) {
+      setError(err.message)
     }
+    setLoading(false)
   }
 
   return (
-    <div className=\"min-h-screen flex items-center justify-center\">
-      <div className=\"max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow\">
-        <h2 className=\"text-3xl font-bold text-center\">Sign In</h2>
+    <main className="min-h-screen flex items-center justify-center bg-slate-900">
+      <div className="max-w-md w-full p-8 bg-slate-800 rounded-lg shadow-lg border border-slate-700">
+        <h1 className="text-2xl font-bold text-center mb-6 text-white">Login to LearnFlow</h1>
 
         {error && (
-          <div className=\"bg-red-50 text-red-500 p-3 rounded\">{error}</div>
+          <div className="mb-4 p-3 bg-red-900/50 text-red-300 rounded border border-red-700">
+            {error}
+          </div>
         )}
 
-        <form onSubmit={handleSubmit} className=\"space-y-6\">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className=\"block text-sm font-medium\">Email</label>
+            <label className="block text-sm font-medium mb-1 text-slate-300">Email</label>
             <input
-              type=\"email\"
+              type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className=\"mt-1 block w-full rounded border p-2\"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             />
           </div>
 
           <div>
-            <label className=\"block text-sm font-medium\">Password</label>
+            <label className="block text-sm font-medium mb-1 text-slate-300">Password</label>
             <input
-              type=\"password\"
+              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className=\"mt-1 block w-full rounded border p-2\"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             />
           </div>
 
           <button
-            type=\"submit\"
-            className=\"w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700\"
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            Sign In
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
-        <p className=\"text-center text-sm\">
-          Don\\'t have an account?{\" \"}
-          <a href=\"/signup\" className=\"text-blue-600 hover:underline\">
+        <p className="mt-6 text-center text-sm text-slate-400">
+          Don&apos;t have an account?{" "}
+          <Link href="/signup" className="text-blue-400 hover:underline">
             Sign up
-          </a>
+          </Link>
         </p>
       </div>
-    </div>
+    </main>
   )
 }
 '''
 
-SIGNUP_PAGE = '''\"use client\"
+SIGNUP_PAGE = '''"use client"
 
-import { useState } from \"react\"
-import { useRouter } from \"next/navigation\"
-import { authClient } from \"@/lib/auth-client\"
+import { useState } from "react"
+import Link from "next/link"
 
 export default function SignupPage() {
-  const [email, setEmail] = useState(\"\")
-  const [password, setPassword] = useState(\"\")
-  const [name, setName] = useState(\"\")
-  const [error, setError] = useState(\"\")
-  const router = useRouter()
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [role, setRole] = useState<"student" | "teacher">("student")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(\"\")
+    setLoading(true)
+    setError("")
 
     try {
-      await authClient.signUp.email({ email, password, name })
-      router.push(\"/dashboard\")
-    } catch (err) {
-      setError(\"Failed to create account\")
+      const res = await fetch("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, role }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        let message = "Signup failed"
+        try {
+          const data = JSON.parse(text)
+          message = data.message || message
+        } catch {
+          if (text) message = text
+        }
+        throw new Error(message)
+      }
+
+      window.location.href = role === "teacher" ? "/teacher" : "/dashboard"
+    } catch (err: any) {
+      setError(err.message)
     }
+    setLoading(false)
   }
 
   return (
-    <div className=\"min-h-screen flex items-center justify-center\">
-      <div className=\"max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow\">
-        <h2 className=\"text-3xl font-bold text-center\">Create Account</h2>
+    <main className="min-h-screen flex items-center justify-center bg-slate-900">
+      <div className="max-w-md w-full p-8 bg-slate-800 rounded-lg shadow-lg border border-slate-700">
+        <h1 className="text-2xl font-bold text-center mb-6 text-white">Create Account</h1>
 
         {error && (
-          <div className=\"bg-red-50 text-red-500 p-3 rounded\">{error}</div>
+          <div className="mb-4 p-3 bg-red-900/50 text-red-300 rounded border border-red-700">
+            {error}
+          </div>
         )}
 
-        <form onSubmit={handleSubmit} className=\"space-y-6\">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className=\"block text-sm font-medium\">Name</label>
+            <label className="block text-sm font-medium mb-2 text-slate-300">I am a...</label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setRole("student")}
+                className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all text-sm font-medium ${
+                  role === "student"
+                    ? "border-blue-500 bg-blue-500/10 text-blue-400"
+                    : "border-slate-600 bg-slate-700 text-slate-300 hover:border-slate-500"
+                }`}
+              >
+                <div className="text-lg mb-1">Student</div>
+                <div className="text-xs opacity-70">Learn Python with AI</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole("teacher")}
+                className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all text-sm font-medium ${
+                  role === "teacher"
+                    ? "border-purple-500 bg-purple-500/10 text-purple-400"
+                    : "border-slate-600 bg-slate-700 text-slate-300 hover:border-slate-500"
+                }`}
+              >
+                <div className="text-lg mb-1">Teacher</div>
+                <div className="text-xs opacity-70">Monitor & guide students</div>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1 text-slate-300">Name</label>
             <input
-              type=\"text\"
+              type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className=\"mt-1 block w-full rounded border p-2\"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             />
           </div>
 
           <div>
-            <label className=\"block text-sm font-medium\">Email</label>
+            <label className="block text-sm font-medium mb-1 text-slate-300">Email</label>
             <input
-              type=\"email\"
+              type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className=\"mt-1 block w-full rounded border p-2\"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             />
           </div>
 
           <div>
-            <label className=\"block text-sm font-medium\">Password</label>
+            <label className="block text-sm font-medium mb-1 text-slate-300">Password</label>
             <input
-              type=\"password\"
+              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className=\"mt-1 block w-full rounded border p-2\"
-              required
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               minLength={8}
+              required
             />
           </div>
 
           <button
-            type=\"submit\"
-            className=\"w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700\"
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            Sign Up
+            {loading ? "Creating account..." : "Sign Up"}
           </button>
         </form>
 
-        <p className=\"text-center text-sm\">
-          Already have an account?{\" \"}
-          <a href=\"/login\" className=\"text-blue-600 hover:underline\">
+        <p className="mt-6 text-center text-sm text-slate-400">
+          Already have an account?{" "}
+          <Link href="/login" className="text-blue-400 hover:underline">
             Sign in
-          </a>
+          </Link>
         </p>
       </div>
-    </div>
+    </main>
   )
 }
 '''
 
-AUTH_CLIENT = '''import { createAuthClient } from \"better-auth/react\"
-
-export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || \"http://localhost:3000\",
-})
-'''
 
 def generate_auth_pages(project_dir):
-    """Generate login and signup pages."""
+    """Generate login and signup pages with role selection."""
     project_path = Path(project_dir)
 
     if not project_path.exists():
-        print(f"❌ Project directory not found: {project_dir}")
+        print(f"Error: Project directory not found: {project_dir}")
         return 1
 
-    print(f"→ Generating auth pages...")
+    print(f"Generating auth pages with role selection...")
 
-    # Create auth client
-    lib_dir = project_path / "lib"
-    lib_dir.mkdir(exist_ok=True)
-
-    auth_client_file = lib_dir / "auth-client.ts"
-    auth_client_file.write_text(AUTH_CLIENT)
-
-    print(f"  ✓ Created: lib/auth-client.ts")
+    # Detect app directory
+    app_dir = project_path / "src" / "app" if (project_path / "src" / "app").exists() else project_path / "app"
 
     # Create login page
-    login_dir = project_path / "app" / "login"
+    login_dir = app_dir / "login"
     login_dir.mkdir(parents=True, exist_ok=True)
-
-    login_page = login_dir / "page.tsx"
-    login_page.write_text(LOGIN_PAGE)
-
-    print(f"  ✓ Created: app/login/page.tsx")
+    (login_dir / "page.tsx").write_text(LOGIN_PAGE)
+    print(f"  Created: login/page.tsx (with resilient error handling + role-based redirect)")
 
     # Create signup page
-    signup_dir = project_path / "app" / "signup"
+    signup_dir = app_dir / "signup"
     signup_dir.mkdir(parents=True, exist_ok=True)
-
-    signup_page = signup_dir / "page.tsx"
-    signup_page.write_text(SIGNUP_PAGE)
-
-    print(f"  ✓ Created: app/signup/page.tsx")
+    (signup_dir / "page.tsx").write_text(SIGNUP_PAGE)
+    print(f"  Created: signup/page.tsx (with student/teacher role selection)")
 
     print(f"\n✓ Auth pages generated")
-    print(f"  Routes:")
-    print(f"    - /login")
-    print(f"    - /signup")
+    print(f"  Routes: /login, /signup")
+    print(f"  Features:")
+    print(f"    - Role selection (student/teacher) on signup")
+    print(f"    - Role-based redirect after login (teacher->/teacher, student->/dashboard)")
+    print(f"    - Resilient JSON error handling (handles empty responses)")
+    print(f"    - Dark theme matching LearnFlow design")
     print(f"\n→ Next: python scripts/add_middleware.py --project-dir {project_dir}")
 
     return 0
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

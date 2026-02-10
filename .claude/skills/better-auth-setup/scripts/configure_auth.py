@@ -1,137 +1,147 @@
 #!/usr/bin/env python3
-"""Configure Better Auth with database and OAuth providers."""
+"""Configure Better Auth with Neon PostgreSQL, role field, and SSL handling.
+
+Matches actual LearnFlow production patterns:
+- Neon PostgreSQL with SSL (sslmode stripped from URL, configured via Pool options)
+- Custom role field (student/teacher) on user model
+- Trusted origins for CORS
+- Better Auth React client for session management
+"""
 import sys, argparse
 from pathlib import Path
 
-AUTH_CONFIG_TS = '''import { betterAuth } from "better-auth"
-import { Pool } from "pg"
+# Auth config matching actual LearnFlow auth.ts
+AUTH_CONFIG_TS = '''import { betterAuth } from "better-auth";
+import { Pool } from "pg";
 
-const pool = new Pool({{
-  connectionString: process.env.DATABASE_URL,
-}})
+// Strip sslmode from connection string - we configure SSL explicitly below
+const dbUrl = (process.env.DATABASE_URL || "").replace(/[?&]sslmode=[^&]*/g, "").replace(/\\?$/, "");
 
-export const auth = betterAuth({{
-  database: {{
-    provider: "postgres",
-    pool,
-  }},
-  emailAndPassword: {{
+export const auth = betterAuth({
+  database: new Pool({
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false },
+  }),
+  secret: process.env.AUTH_SECRET,
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+  trustedOrigins: [
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:3000",
+  ],
+  emailAndPassword: {
     enabled: true,
-  }},
-  socialProviders: {{{social_config}
-  }},
-  secret: process.env.AUTH_SECRET || "your-secret-key-change-in-production",
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-}})
+  },
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        defaultValue: "student",
+        input: true,
+      },
+    },
+  },
+});
 '''
 
-SOCIAL_GOOGLE = '''
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    },'''
+# Auth client matching actual LearnFlow auth-client.ts
+AUTH_CLIENT_TS = '''import { createAuthClient } from "better-auth/react";
 
-SOCIAL_GITHUB = '''
-    github: {
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-    },'''
+export const authClient = createAuthClient({
+  baseURL: typeof window !== "undefined" ? window.location.origin : "http://localhost:3000",
+});
 
-AUTH_API_ROUTE = '''import { auth } from "@/lib/auth"
-import { toNextJsHandler } from "better-auth/next-js"
+export const { useSession, signIn, signUp, signOut } = authClient;
+'''
 
-export const { GET, POST } = toNextJsHandler(auth)
+# API route handler matching actual pattern
+AUTH_API_ROUTE = '''import { auth } from "../../../../../lib/auth";
+import { toNextJsHandler } from "better-auth/next-js";
+
+export const { GET, POST } = toNextJsHandler(auth);
 '''
 
 ENV_TEMPLATE = '''# Better Auth Configuration
-DATABASE_URL="your-neon-connection-string"
-AUTH_SECRET="generate-a-secure-random-string"
+DATABASE_URL="{database_url}"
+AUTH_SECRET="{auth_secret}"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
-
-# OAuth Providers (optional)
-{oauth_env}
 '''
 
-def configure_auth(project_dir, database_url, providers):
-    """Configure Better Auth."""
+
+def configure_auth(project_dir, database_url):
+    """Configure Better Auth with Neon PostgreSQL and role field."""
     project_path = Path(project_dir)
 
     if not project_path.exists():
-        print(f"❌ Project directory not found: {project_dir}")
+        print(f"Error: Project directory not found: {project_dir}")
         return 1
 
-    print(f"→ Configuring Better Auth...")
+    print(f"Configuring Better Auth with Neon PostgreSQL...")
 
     # Create lib directory
     lib_dir = project_path / "lib"
     lib_dir.mkdir(exist_ok=True)
 
-    # Generate social provider config
-    social_config = ""
-    oauth_env = ""
-
-    if providers:
-        provider_list = [p.strip().lower() for p in providers.split(',')]
-
-        if 'google' in provider_list:
-            social_config += SOCIAL_GOOGLE
-            oauth_env += "GOOGLE_CLIENT_ID=your-google-client-id\n"
-            oauth_env += "GOOGLE_CLIENT_SECRET=your-google-client-secret\n"
-
-        if 'github' in provider_list:
-            social_config += SOCIAL_GITHUB
-            oauth_env += "GITHUB_CLIENT_ID=your-github-client-id\n"
-            oauth_env += "GITHUB_CLIENT_SECRET=your-github-client-secret\n"
-
-    # Write auth config
-    auth_config = AUTH_CONFIG_TS.format(social_config=social_config)
+    # Write auth config with role field and Neon SSL handling
     auth_file = lib_dir / "auth.ts"
-    auth_file.write_text(auth_config)
+    auth_file.write_text(AUTH_CONFIG_TS)
+    print(f"  Created: lib/auth.ts (with role field + Neon SSL)")
 
-    print(f"  ✓ Created: lib/auth.ts")
+    # Write auth client
+    auth_client_file = lib_dir / "auth-client.ts"
+    auth_client_file.write_text(AUTH_CLIENT_TS)
+    print(f"  Created: lib/auth-client.ts (React client with useSession, signIn, signUp, signOut)")
 
-    # Create API route
-    api_route_dir = project_path / "app" / "api" / "auth" / "[...all]"
+    # Create API route: src/app/api/auth/[...all]/route.ts
+    # Handle both src/app and app directory structures
+    app_dir = project_path / "src" / "app" if (project_path / "src" / "app").exists() else project_path / "app"
+    api_route_dir = app_dir / "api" / "auth" / "[...all]"
     api_route_dir.mkdir(parents=True, exist_ok=True)
 
     api_route_file = api_route_dir / "route.ts"
     api_route_file.write_text(AUTH_API_ROUTE)
+    print(f"  Created: api/auth/[...all]/route.ts")
 
-    print(f"  ✓ Created: app/api/auth/[...all]/route.ts")
+    # Create .env.local
+    import secrets
+    auth_secret = secrets.token_urlsafe(32)
+    env_content = ENV_TEMPLATE.format(
+        database_url=database_url if database_url else "your-neon-connection-string",
+        auth_secret=auth_secret,
+    )
+    env_file = project_path / ".env.local"
+    if not env_file.exists():
+        env_file.write_text(env_content)
+        print(f"  Created: .env.local (with generated AUTH_SECRET)")
+    else:
+        print(f"  Skipped: .env.local already exists")
 
-    # Create .env.local template
-    env_content = ENV_TEMPLATE.format(oauth_env=oauth_env)
-    env_file = project_path / ".env.local.template"
-    env_file.write_text(env_content)
-
-    print(f"  ✓ Created: .env.local.template")
-
-    # Update actual .env.local if database_url provided
-    if database_url and database_url != "your-neon-connection-string":
-        env_local = project_path / ".env.local"
-        current_env = env_local.read_text() if env_local.exists() else ""
-
-        if "DATABASE_URL" not in current_env:
-            with env_local.open('a') as f:
-                f.write(f"\n# Better Auth\\nDATABASE_URL=\"{database_url}\"\\n")
-            print(f"  ✓ Updated: .env.local")
+    # Create .env.local.template
+    template_content = ENV_TEMPLATE.format(
+        database_url="postgresql://user:pass@host/db?sslmode=require",
+        auth_secret="generate-with-openssl-rand-base64-32",
+    )
+    template_file = project_path / ".env.local.template"
+    template_file.write_text(template_content)
+    print(f"  Created: .env.local.template")
 
     print(f"\n✓ Better Auth configured")
-    print(f"  Database: PostgreSQL")
-    print(f"  Providers: email/password{', ' + providers if providers else ''}")
-    print(f"\n⚠ Action required:")
-    print(f"  1. Copy .env.local.template to .env.local")
-    print(f"  2. Fill in OAuth credentials (if using)")
-    print(f"  3. Generate AUTH_SECRET: openssl rand -base64 32")
+    print(f"  Database: Neon PostgreSQL (SSL enabled)")
+    print(f"  Auth: email/password with role field (student/teacher)")
+    print(f"  Role field: user.role (default: 'student', input: true)")
+    print(f"\n  Key patterns:")
+    print(f"    - sslmode stripped from URL, SSL configured via Pool options")
+    print(f"    - Role field added as additionalFields on user model")
+    print(f"    - Auth client exports: useSession, signIn, signUp, signOut")
     print(f"\n→ Next: python scripts/generate_auth_pages.py --project-dir {project_dir}")
 
     return 0
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Configure Better Auth for LearnFlow")
     parser.add_argument("--project-dir", required=True, help="Next.js project directory")
-    parser.add_argument("--database-url", default="your-neon-connection-string",
+    parser.add_argument("--database-url", default="",
                        help="Neon PostgreSQL connection string")
-    parser.add_argument("--providers", help="Comma-separated OAuth providers (google,github)")
     args = parser.parse_args()
-    sys.exit(configure_auth(args.project_dir, args.database_url, args.providers))
+    sys.exit(configure_auth(args.project_dir, args.database_url))
