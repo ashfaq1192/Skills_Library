@@ -35,13 +35,18 @@ This is **Repository 1** of two deliverables for Hackathon III: Reusable Intelli
 | `better-auth-setup` | Configure Better Auth authentication | ✅ Complete |
 | `kong-gateway-setup` | Deploy Kong API Gateway | ✅ Complete |
 
+### Cloud Deployment Skills
+
+| Skill | Purpose | Status |
+|-------|---------|--------|
+| `gke-fullstack-deployment` | Deploy full-stack apps to GKE with Docker, secrets, and Kong LB | ✅ Complete |
+
 ### Optional Skills (Bonus)
 
 | Skill | Purpose | Status |
 |-------|---------|--------|
 | `argocd-deployment` | GitOps continuous deployment | 📋 Planned |
 | `prometheus-grafana-setup` | Monitoring and observability | 📋 Planned |
-| `cloud-deploy` | Deploy to Azure/GCP/Oracle Cloud | 📋 Planned |
 
 ## 🚀 Quick Start
 
@@ -248,8 +253,9 @@ skills-library/
 │   │   ├── SKILL.md
 │   │   ├── REFERENCE.md
 │   │   └── scripts/
-│   ├── kafka-k8s-setup/         # 📋 Planned
-│   └── ...                      # Other skills
+│   ├── kafka-k8s-setup/         # ✅ Complete
+│   ├── gke-fullstack-deployment/# ✅ Complete
+│   └── ...                      # 12+ total skills
 ├── .specify/                    # SpecKit Plus (planning framework)
 │   ├── memory/constitution.md   # Skill development principles
 │   ├── scripts/bash/            # PHR/ADR creation scripts
@@ -282,7 +288,7 @@ skills-library/
 
 ## 📝 Related Repositories
 
-- **LearnFlow Application** (Repository 2): Application built ENTIRELY by AI agents using these skills
+- **[LearnFlow Application](https://github.com/ashfaq1192/Hackathon_III_LearnFlow_App)** (Repository 2): Application built ENTIRELY by AI agents using these skills — **[Live Demo](http://35.222.110.147)**
 - **Hackathon III Requirements**: Official requirements and evaluation criteria
 
 ## 📞 Support
@@ -297,7 +303,7 @@ See LICENSE file in this repository.
 
 ---
 
-**Version:** 1.0.0
-**Last Updated:** 2026-01-27
+**Version:** 2.1.0
+**Last Updated:** 2026-02-13
 **Hackathon:** Reusable Intelligence and Cloud-Native Mastery (Hackathon III)
 **Submission:** https://forms.gle/Mrhf9XZsuXN4rWJf7
