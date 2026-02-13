@@ -1,0 +1,142 @@
+# GKE Deployment Template — Next.js Frontend + FastAPI Backend
+# Replace <PLACEHOLDERS> with your actual values before applying.
+#
+# Usage:
+#   kubectl apply -f deploy.yaml
+#
+# Prerequisites:
+#   - GKE cluster running, kubectl connected
+#   - Namespace created: kubectl create namespace todo-app
+#   - Secret created: kubectl create secret generic project-secrets ...
+#   - Images pushed to Docker Hub
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: todo-app
+---
+# =============================================================================
+# Backend Deployment
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-backend
+  namespace: todo-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-backend
+  template:
+    metadata:
+      labels:
+        app: todo-backend
+    spec:
+      containers:
+      - name: backend
+        image: <DOCKER_USER>/todo-backend:<VERSION>
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - secretRef:
+            name: project-secrets
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+# =============================================================================
+# Backend LoadBalancer Service
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-backend
+  namespace: todo-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: todo-backend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+---
+# =============================================================================
+# Frontend Deployment
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-frontend
+  namespace: todo-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-frontend
+  template:
+    metadata:
+      labels:
+        app: todo-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: <DOCKER_USER>/todo-frontend:<VERSION>
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - secretRef:
+            name: project-secrets
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+# =============================================================================
+# Frontend LoadBalancer Service
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-frontend
+  namespace: todo-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: todo-frontend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
