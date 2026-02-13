@@ -1,66 +1,105 @@
 # AGENTS.md
 
-**Generated**: 2026-01-27T05:34:11.776446Z
-**Analyzer Version**: 1.0.0
-
-## Project Overview
-
-This repository contains a software project built with Python. Testing is implemented using pytest.
+**Project**: Skills Library - Reusable Intelligence for Cloud-Native Applications
+**Purpose**: Repository 1 of Hackathon III - Reusable skills that enable AI agents to build cloud-native apps autonomously
+**Pattern**: MCP Code Execution (SKILL.md ~100 tokens + scripts execute operations)
 
 ## Project Structure
 
 ```
 skills-library/
-└── .claude/  (159 files)
-    ├── api-client-retry-auth/
-    ├── backend-crud-api/
-    ├── browsing-with-playwright/
-    ├── docx/
-    └── fastapi-project-builder/
+├── AGENTS.md                           # This file
+├── README.md                           # Skill catalog and usage guide
+├── .claude/skills/                     # All reusable skills
+│   ├── agents-md-gen/                  # Generate AGENTS.md files
+│   ├── k8s-foundation/                # Kubernetes operations and health checks
+│   ├── kafka-k8s-setup/               # Deploy Kafka with Strimzi + KRaft
+│   ├── neon-postgres-setup/           # Setup Neon PostgreSQL with schemas
+│   ├── dapr-setup/                    # Install Dapr runtime on K8s
+│   ├── mcp-code-execution/            # MCP Code Execution pattern reference
+│   ├── docusaurus-deploy/             # Deploy documentation site
+│   ├── fastapi-dapr-agent/            # Generate FastAPI microservices with Dapr + AI
+│   ├── nextjs-k8s-deploy/            # Deploy Next.js with Monaco Editor to K8s
+│   ├── better-auth-setup/            # Configure Better Auth + Neon PostgreSQL
+│   ├── kong-gateway-setup/           # Deploy Kong API Gateway on K8s
+│   ├── gke-fullstack-deployment/     # Deploy full-stack apps to GKE
+│   ├── skill-creator-pro/            # Create new production-grade skills
+│   └── skill-validator/              # Validate skills against quality criteria
+├── .specify/                          # SpecKit Plus framework
+│   ├── memory/constitution.md         # Skill development principles
+│   ├── scripts/bash/                  # PHR/ADR creation scripts
+│   └── templates/                     # Spec, plan, task templates
+└── history/
+    ├── prompts/                       # Prompt History Records
+    └── adr/                           # Architecture Decision Records
 ```
 
-### Key Files
+## Skills Catalog
 
-**Configuration**: .claude/nextjs-better-auth-setup/assets/.env.example
+| Skill | Purpose | Category |
+|-------|---------|----------|
+| `agents-md-gen` | Generate AGENTS.md for repository context | Infrastructure |
+| `k8s-foundation` | Kubernetes cluster operations and health checks | Infrastructure |
+| `kafka-k8s-setup` | Deploy Apache Kafka with Strimzi operator and KRaft | Infrastructure |
+| `neon-postgres-setup` | Setup Neon PostgreSQL with Better Auth schemas | Infrastructure |
+| `dapr-setup` | Install Dapr runtime on Kubernetes | Infrastructure |
+| `mcp-code-execution` | MCP Code Execution pattern implementation | Infrastructure |
+| `docusaurus-deploy` | Deploy Docusaurus documentation site | Infrastructure |
+| `fastapi-dapr-agent` | Generate FastAPI microservices with Dapr + OpenAI | Application |
+| `nextjs-k8s-deploy` | Deploy Next.js with Monaco Editor and service proxy | Application |
+| `better-auth-setup` | Configure Better Auth with role-based auth | Application |
+| `kong-gateway-setup` | Deploy Kong Ingress Controller on Kubernetes | Application |
+| `gke-fullstack-deployment` | Deploy full-stack apps to GKE with Docker, secrets, Kong LB | Cloud |
+| `skill-creator-pro` | Create new production-grade reusable skills | Meta |
+| `skill-validator` | Validate skills against 9-category quality scoring | Meta |
 
-## Key Conventions
+## Skill Structure Convention
 
-- Python test files use test_*.py naming
+Every skill follows this structure:
 
-## Getting Started
+```
+.claude/skills/<skill-name>/
+├── SKILL.md              # ~100 tokens max (instructions only)
+├── REFERENCE.md          # Deep docs (loaded on-demand)
+└── scripts/
+    ├── *.py              # Python scripts that execute operations
+    ├── *.sh              # Bash scripts for deployment
+    └── templates/        # Config/code templates
+```
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd <repository-name>
-   ```
+### MCP Code Execution Pattern
 
-2. **Install dependencies**:
-   *Refer to project documentation for setup instructions*
+Skills use the MCP Code Execution pattern for token efficiency:
 
-3. **Run tests**:
-   ```bash
-   pytest
-   ```
+1. **SKILL.md** tells the agent WHAT to do (~100 tokens loaded)
+2. **scripts/** does the actual work (0 tokens loaded - executed, not read)
+3. Only the final result enters context (minimal tokens, e.g., "Done")
 
-## AI Agent Guidelines
+**Result:** 78-98% fewer tokens vs direct MCP tool integration.
 
-### Working with This Codebase
+## Conventions for AI Agents
 
-- **Primary Language**: Python
-- **Testing**: Always run tests before committing changes
-  - Framework: pytest
-- **Code Conventions**: Follow detected patterns:
-  - Python test files use test_*.py naming
+### Creating Skills
+- SKILL.md MUST be ~100 tokens (instructions only, no implementation)
+- Heavy logic goes in `scripts/` directory
+- Scripts must be executable: `chmod +x scripts/*.sh`
+- Include REFERENCE.md for deep documentation
+- YAML frontmatter required: name, description, version
 
-### Best Practices for AI Agents
+### Testing Skills
+- Every skill MUST work on both Claude Code and Goose
+- Test standalone: `python scripts/deploy.py --dry-run`
+- Test with Claude Code: `claude "Use <skill-name> to <task>"`
+- Test with Goose: `goose "Use <skill-name> to <task>"`
 
-- Read existing code patterns before making changes
-- Preserve existing naming conventions and structure
-- Add tests for new functionality
-- Update documentation when adding features
-- Check for similar existing implementations before creating new code
+### Commit Style
+- `feat: add <skill-name> skill with MCP code execution`
+- `fix: update <skill-name> to handle <edge-case>`
+- `docs: update <skill-name> REFERENCE.md with <topic>`
+
+## Related
+
+- **[LearnFlow App](https://github.com/ashfaq1192/Hackathon_III_LearnFlow_App)**: Application built entirely by AI agents using these skills — [Live Demo](http://35.222.110.147)
 
 ---
-
-*This file was automatically generated by the agents-md-gen skill. To regenerate after structural changes, run the analysis and generation scripts again.*
+*Skills in this repository follow the MCP Code Execution pattern for token-efficient AI agent automation.*
